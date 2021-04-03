@@ -65,14 +65,14 @@ def deconstructFlags(flags:str):
 def parseAnswer(result):
     RESPONSEFLAGS , ANSWER = result[4:8], result[len(QUESTION+HEADER):]
 
-    TYPE = int(ANSWER[4:8], 16)
-    TTL = int(ANSWER[12:20], 16)
-    RDLENGTH = int(ANSWER[20:24], 16)
-    RDDATA = ANSWER[-RDLENGTH*2:]
-    IP = '.'.join(list(str(int(RDDATA[i:i+2], 16)) for i in range(0, len(RDDATA), 2)))
 
     AA, RCODE = deconstructFlags(RESPONSEFLAGS)
     if RCODE == '0000': # No Errors
+        TYPE = int(ANSWER[4:8], 16)
+        TTL = int(ANSWER[12:20], 16)
+        RDLENGTH = int(ANSWER[20:24], 16)
+        RDDATA = ANSWER[-RDLENGTH*2:]
+        IP = '.'.join(list(str(int(RDDATA[i:i+2], 16)) for i in range(0, len(RDDATA), 2)))
         print('No Errors Encountered.')
         print(f'Requested Domain:\t{domainName}')
         print(f'TTL(Time To Live):\t{TTL} seconds')
