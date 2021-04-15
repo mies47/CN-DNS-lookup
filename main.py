@@ -4,6 +4,11 @@ import struct
 import binascii
 import sys
 import time
+import dnslib
+import json
+
+f = open('./root-servers.json')
+rootServers = json.load(f)
 
 def UDPSocketConnection(host:str, port:int, message:str):
     '''
@@ -22,7 +27,8 @@ def UDPSocketConnection(host:str, port:int, message:str):
         sys.exit()
 
 
-HOST = '1.1.1.1'
+# HOST = '198.41.0.4'
+HOST = '127.0.0.1'
 PORT = 53
 
 def constructMessage(domain:str):
@@ -33,7 +39,7 @@ def constructMessage(domain:str):
     ID = format(random.getrandbits(16), '04x') # Random generated ID
     print(f'Generated ID is:\t{ID}')
     FLAGS = format(0, '04x') # Set all Flags to zero(No recursion using iterative Queries)
-    print(f'Flags:\t{FLAGS}(No recursion desired do query by iteration)')
+    print(f'Flags:\t{FLAGS}(No recursion desired, do query by iteration)')
     QDCOUNT = format(1, '04x') # Number of questions
     print(f'Number of questions:\t{QDCOUNT}')
     ANCOUNT = format(0, '04x')
@@ -63,8 +69,10 @@ def deconstructFlags(flags:str):
     return AA, RCODE
 
 def parseAnswer(result):
+    packet = binascii.unhexlify(result)
+    x = dnslib.DNSRecord.parse(packet)
+    # print(x.ar)
     RESPONSEFLAGS , ANSWER = result[4:8], result[len(QUESTION+HEADER):]
-
 
     AA, RCODE = deconstructFlags(RESPONSEFLAGS)
     if RCODE == '0000': # No Errors
@@ -82,11 +90,12 @@ def parseAnswer(result):
     else:
         print(RCODE)
 
-if len(sys.argv) < 2:
-    print('Please provide required args!!')
-    sys.exit()
+# if len(sys.argv) < 2:
+#     print('Please provide required args!!')
+#     sys.exit()
 
-domainName = sys.argv[-1:][0]
+# domainName = sys.argv[-1:][0]
+domainName = input()
 print(20*'-', 'Question Section', 20*'-')
 HEADER, QUESTION, request = constructMessage(domainName)
 
