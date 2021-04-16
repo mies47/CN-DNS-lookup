@@ -7,7 +7,7 @@ import dnslib
 import json
 import csv
 import getopt
-from colorama import Fore
+from colorama import Fore, Style
 
 rootFile = open('./root-servers.json')
 rootServers = json.load(rootFile)
@@ -164,7 +164,8 @@ options = parseArgs()
 isSingleDomain, domainName = readInputDomains(options)
 
 if isSingleDomain:
-    print(20*'-', 'Question Section', 20*'-')
+    print(Fore.GREEN, 20*'-', 'Question Section', 20*'-')
+    print(Style.RESET_ALL)
     HEADER, QUESTION, request = constructMessage(domainName)
 
     startTime = time.time()
