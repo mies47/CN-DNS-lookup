@@ -14,8 +14,8 @@ rootServers = json.load(rootFile)
 
 recordTypes = json.load(open('./records.json'))
 
-testcsvf = open('./test.csv')
-csvtest = csv.reader(testcsvf, delimiter=',')
+cacheFile = open('./dnsCache.json', 'r')
+cache = json.load(cacheFile)
 
 def UDPSocketConnection(host:str, port:int, message:str):
     '''
@@ -25,7 +25,7 @@ def UDPSocketConnection(host:str, port:int, message:str):
         Returns the result or exits if encountered error
     '''
     try:
-        dnsSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        dnsSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  
         dnsSocket.sendto(request, (host, port))
         return dnsSocket.recvfrom(4096)
     except Exception as e:
@@ -133,6 +133,9 @@ def parseArgs():
             elif opt in ['-o', '--output']:
                 options['output'] = value
             elif opt in ['-r', '--record']:
+                if value not in recordTypes.keys():
+                    print(Fore.RED , 'Record type not supported!')
+                    sys.exit(2)
                 options['record'] = value
             elif opt in ['-R', '--Recur']:
                 options['recursion'] = True
@@ -162,7 +165,32 @@ def readInputDomains(options):
             print(Fore.RED + str(error))
             sys.exit(2)
 
-HOST = '1.1.1.1'
+def hasAnswerInCache(typeRecord:str ,domainName:str):
+    if typeRecord in cache:
+        if domainName in cache[typeRecord]:
+            cache[typeRecord][domainName]['count'] += 1
+            if cache[typeRecord][domainName]['count'] >= 3:
+                return cache[typeRecord][domainName]['data']
+            else:
+                return False
+        else:
+            cache[typeRecord][domainName] = {'count': 1}
+            return False
+    else:
+        cache[typeRecord] = {domainName: {'count': 1}}
+        return False
+
+def writeToCache(typeRecord:str ,domainName:str, datas):
+    cache[typeRecord][domainName]['data'] = datas
+
+def printCache(domainName, typeRec, cacheAnswer):
+    print(Fore.GREEN, 20*'-', 'Answer Section', 20*'-')
+    print(f'Name {domainName} of type {typeRec} is used more than 3 times. Got results from cache!\n')
+    print('RName\t\tRType\tTTL\tRData')
+    for ans in cacheAnswer:
+        print(f"{ans['rname']}\t{ans['rtype']}\t{ans['ttl']}\t{ans['rdata']}\n")
+
+HOST = '8.8.8.8'
 PORT = 53
 options = parseArgs()
 isSingleDomain, domainName = readInputDomains(options)
@@ -172,14 +200,19 @@ if isSingleDomain:
         print(Fore.YELLOW, 20*'-', 'Question Section', 20*'-')
         HEADER, QUESTION, request = constructMessage(domainName, options['record'], options['recursion'])
 
-        startTime = time.time()
-        answer = sendRequest(request, options['record'])
-        endTime = time.time()
-        print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
+        cacheAnswer = hasAnswerInCache(options['record'], domainName)
+        if cacheAnswer:
+            printCache(domainName, options['record'],cacheAnswer)
+        else:            
+            startTime = time.time()
+            answer = sendRequest(request, options['record'])
+            endTime = time.time()
+            print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
 
-        print(Fore.GREEN, 20*'-', 'Answer Section', 20*'-')
-        print(answer)
-        print(Style.RESET_ALL)
+            print(Fore.GREEN, 20*'-', 'Answer Section', 20*'-')
+            print(answer)
+            print(Style.RESET_ALL)
+            writeToCache(options['record'], domainName, [{'rname': str(rr.rname), 'rtype': int(rr.rtype), 'ttl': int(rr.ttl), 'rdata': str(rr.rdata)} for rr in answer.rr])
     except Exception as error:
         print(Fore.RED, error)
         sys.exit(2)
@@ -188,22 +221,31 @@ else:
         csvOutput = csv.writer(open(options['output'], 'w'), delimiter=',')
         csvOutput.writerow(['rname', 'rtype', 'ttl', 'rdata'])
         for name, record in domainName:
+            if record not in recordTypes:
+                print(Fore.RED , 'Record type not supported!')
+                sys.exit(2)
             print(Fore.YELLOW, 20*'-', 'Question Section', 20*'-')
             HEADER, QUESTION, request = constructMessage(name, record.strip(), options['recursion'])
+            if cacheAnswer:
+                printCache(domainName, options['record'],cacheAnswer)
+            else:
+                startTime = time.time()
+                answer = sendRequest(request, record.strip())
+                endTime = time.time()
+                print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
 
-            startTime = time.time()
-            answer = sendRequest(request, record.strip())
-            endTime = time.time()
-            print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
-
-            for rr in answer.rr:
-                csvOutput.writerow([rr.rname, str(rr.rtype), rr.ttl, rr.rdata])
-            for ar in answer.ar:
-                csvOutput.writerow([ar.rname, str(ar.rtype), ar.ttl, ar.rdata])
-            print(Fore.GREEN, 20*'-', 'Saved in csv!', 20*'-')
-            print(Style.RESET_ALL)
+                for rr in answer.rr:
+                    csvOutput.writerow([rr.rname, str(rr.rtype), rr.ttl, rr.rdata])
+                for ar in answer.ar:
+                    csvOutput.writerow([ar.rname, str(ar.rtype), ar.ttl, ar.rdata])
+                print(Fore.GREEN, 20*'-', 'Saved in csv!', 20*'-')
+                print(Style.RESET_ALL)
+                writeToCache(options['record'], domainName, [{'rname': str(rr.rname), 'rtype': int(rr.rtype), 'ttl': int(rr.ttl), 'rdata': str(rr.rdata)} for rr in answer.rr])
     except Exception as error:
         print(Fore.RED, error)
         sys.exit(2)
+    
+cacheFile = open('./dnsCache.json', 'w')
+json.dump(cache, cacheFile)
 
 
