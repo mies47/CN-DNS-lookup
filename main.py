@@ -38,8 +38,9 @@ def constructMessage(domain:str, recordType: str, recursionDesired: bool):
         Constructs the HEADER and Question part of request based on recordType
         Returns Header, Question and binary reperesentation of constructed request
     '''
-    ID = format(random.getrandbits(16), '04x') # Random generated ID
-    print(f'Generated ID is:\t{ID}')
+    randomID = random.getrandbits(16)
+    ID = format(randomID, '04x') # Random generated ID
+    print(f'Generated ID is:\t{randomID}')
     FLAGS = ''
     if recursionDesired:
         FLAGS = format(256, '04x') # Recursion desired
@@ -84,7 +85,6 @@ def sendRequest(message, record):
         rootAnswer = dnslib.DNSRecord.parse(data)
         if rootAnswer.header.rcode == 0 and record == 'PTR':
             return rootAnswer
-        print(rootAnswer)
         for tld in rootAnswer.ar:
             if tld.rtype == 1:
                 tldData, _ = UDPSocketConnection(str(tld.rdata), 53, message)
@@ -169,11 +169,10 @@ isSingleDomain, domainName = readInputDomains(options)
 
 if isSingleDomain:
     try:
-        print(Fore.GREEN, 20*'-', 'Question Section', 20*'-')
+        print(Fore.YELLOW, 20*'-', 'Question Section', 20*'-')
         HEADER, QUESTION, request = constructMessage(domainName, options['record'], options['recursion'])
 
         startTime = time.time()
-        print(Fore.YELLOW, 20*'-', 'Whats Going On', 20*'-')
         answer = sendRequest(request, options['record'])
         endTime = time.time()
         print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
@@ -185,6 +184,26 @@ if isSingleDomain:
         print(Fore.RED, error)
         sys.exit(2)
 else:
-    print('hi')
+    try:
+        csvOutput = csv.writer(open(options['output'], 'w'), delimiter=',')
+        csvOutput.writerow(['rname', 'rtype', 'ttl', 'rdata'])
+        for name, record in domainName:
+            print(Fore.YELLOW, 20*'-', 'Question Section', 20*'-')
+            HEADER, QUESTION, request = constructMessage(name, record.strip(), options['recursion'])
+
+            startTime = time.time()
+            answer = sendRequest(request, record.strip())
+            endTime = time.time()
+            print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
+
+            for rr in answer.rr:
+                csvOutput.writerow([rr.rname, str(rr.rtype), rr.ttl, rr.rdata])
+            for ar in answer.ar:
+                csvOutput.writerow([ar.rname, str(ar.rtype), ar.ttl, ar.rdata])
+            print(Fore.GREEN, 20*'-', 'Saved in csv!', 20*'-')
+            print(Style.RESET_ALL)
+    except Exception as error:
+        print(Fore.RED, error)
+        sys.exit(2)
 
 
