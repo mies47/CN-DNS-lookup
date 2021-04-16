@@ -85,17 +85,17 @@ def deconstructFlags(flags:str):
 
 def sendRequest(message, record):
     for root in rootServers:
-        data, _ = UDPSocketConnection(root['ipv4'], 53, message)
+        data, _ = UDPSocketConnection(root['ipv4'], PORT, message)
         rootAnswer = dnslib.DNSRecord.parse(data)
         if rootAnswer.header.rcode == 0 and record == 'PTR':
             return rootAnswer
         for tld in rootAnswer.ar:
             if tld.rtype == 1:
-                tldData, _ = UDPSocketConnection(str(tld.rdata), 53, message)
+                tldData, _ = UDPSocketConnection(str(tld.rdata), PORT, message)
                 tldAnswer = dnslib.DNSRecord.parse(tldData)
                 for ns in tldAnswer.ar:
                     if ns.rtype == 1:
-                        auth, _ = UDPSocketConnection(str(ns.rdata), 53, message)
+                        auth, _ = UDPSocketConnection(str(ns.rdata), PORT, message)
                         authAnswer = dnslib.DNSRecord.parse(auth)
                         if authAnswer.header.aa == 1:
                             return authAnswer
@@ -118,6 +118,10 @@ def parseAnswer(result):
 
     else:
         print(RCODE)
+
+def recurQuery(message):
+    data, _ = UDPSocketConnection(HOST, PORT, message)
+    return dnslib.DNSRecord.parse(data)
 
 def parseArgs():
     args = sys.argv[1:]
@@ -220,7 +224,7 @@ if isSingleDomain:
             printCache(domainName, options['record'],cacheAnswer)
         else:        
             startTime = time.time()
-            answer = sendRequest(request, options['record'])
+            answer = recurQuery(request) if options['recursion'] else sendRequest(request, options['record'])
             endTime = time.time()
             print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
 
@@ -241,11 +245,14 @@ else:
                 sys.exit(2)
             print(Fore.YELLOW, 20*'-', 'Question Section', 20*'-')
             HEADER, QUESTION, request = constructMessage(name, record.strip(), options['recursion'])
+
+            cacheAnswer = hasAnswerInCache(record, name)
             if cacheAnswer:
-                printCache(domainName, options['record'],cacheAnswer)
+                for rr in cacheAnswer:
+                    csvOutput.writerow([rr['rname'], str(rr['rtype']), rr['ttl'], rr['rdata']])
             else:
                 startTime = time.time()
-                answer = sendRequest(request, record.strip())
+                answer = recurQuery(request) if options['recursion'] else sendRequest(request, record.strip())
                 endTime = time.time()
                 print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
 
@@ -255,7 +262,7 @@ else:
                     csvOutput.writerow([ar.rname, str(ar.rtype), ar.ttl, ar.rdata])
                 print(Fore.GREEN, 20*'-', 'Saved in csv!', 20*'-')
                 print(Style.RESET_ALL)
-                writeToCache(options['record'], domainName, [{'rname': str(rr.rname), 'rtype': int(rr.rtype), 'ttl': int(rr.ttl), 'rdata': str(rr.rdata)} for rr in answer.rr])
+                writeToCache(record, name, [{'rname': str(rr.rname), 'rtype': int(rr.rtype), 'ttl': int(rr.ttl), 'rdata': str(rr.rdata)} for rr in answer.rr])
     except Exception as error:
         print(Fore.RED, error)
         sys.exit(2)
