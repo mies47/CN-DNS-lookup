@@ -33,19 +33,20 @@ def UDPSocketConnection(host:str, port:int, message:str):
         dnsSocket.close()
         sys.exit()
 
-
-# HOST = '198.41.0.4'
-PORT = 53
-
-def constructMessage(domain:str):
+def constructMessage(domain:str, recordType: str, recursionDesired: bool):
     '''
-        Constructs the HEADER and Question part of request
+        Constructs the HEADER and Question part of request based on recordType
         Returns Header, Question and binary reperesentation of constructed request
     '''
     ID = format(random.getrandbits(16), '04x') # Random generated ID
     print(f'Generated ID is:\t{ID}')
-    FLAGS = format(0, '04x') # Set all Flags to zero(No recursion using iterative Queries)
-    print(f'Flags:\t{FLAGS}(No recursion desired, do query by iteration)')
+    FLAGS = ''
+    if recursionDesired:
+        FLAGS = format(256, '04x') # Recursion desired
+        print(f'Flags:\t{FLAGS}(Do query recursively)')
+    else:
+        FLAGS = format(0, '04x') # Set all Flags to zero(No recursion using iterative Queries)
+        print(f'Flags:\t{FLAGS}(No recursion desired, do query by iteration)')
     QDCOUNT = format(1, '04x') # Number of questions
     print(f'Number of questions:\t{QDCOUNT}')
     ANCOUNT = format(0, '04x')
@@ -53,7 +54,9 @@ def constructMessage(domain:str):
     ARCOUNT = format(0, '04x')
     HEADER = ''.join([ID, FLAGS, QDCOUNT, ANCOUNT, NSCOUNT,ARCOUNT])
 
-    # domain += '.in-addr.arpa'
+    if recordType == 'PTR':
+        domain += '.in-addr.arpa'
+
     QNAME = ''
     # Split domain name by . and encode each one as a label
     for label in domain.split('.'): 
@@ -61,8 +64,8 @@ def constructMessage(domain:str):
         for char in label:
             QNAME += format(ord(char), '02x')
     QNAME += '00' # Specify the end of QNAME section
-    QTYPE = format(1 , '04x') # Specify record type 1 for A records
-    print(f'Asking for type A Record!\n')
+    QTYPE = format(recordTypes[recordType] , '04x') # Specify record type 
+    print(f'Asking for type {recordType} Record!\n')
     QCLASS = format(1 , '04x') # Specify class of request
     QUESTION = QNAME + QTYPE + QCLASS
 
@@ -75,10 +78,12 @@ def deconstructFlags(flags:str):
 
     return AA, RCODE
 
-def sendRequest(message):
+def sendRequest(message, record):
     for root in rootServers:
         data, _ = UDPSocketConnection(root['ipv4'], 53, message)
         rootAnswer = dnslib.DNSRecord.parse(data)
+        if rootAnswer.header.rcode == 0 and record == 'PTR':
+            return rootAnswer
         print(rootAnswer)
         for tld in rootAnswer.ar:
             if tld.rtype == 1:
@@ -92,9 +97,6 @@ def sendRequest(message):
                             return authAnswer
 
 def parseAnswer(result):
-    packet = binascii.unhexlify(result)
-    x = dnslib.DNSRecord.parse(packet)
-    # print(x.ar)
     RESPONSEFLAGS , ANSWER = result[4:8], result[len(QUESTION+HEADER):]
 
     AA, RCODE = deconstructFlags(RESPONSEFLAGS)
@@ -160,21 +162,28 @@ def readInputDomains(options):
             print(Fore.RED + str(error))
             sys.exit(2)
 
+HOST = '1.1.1.1'
+PORT = 53
 options = parseArgs()
 isSingleDomain, domainName = readInputDomains(options)
 
 if isSingleDomain:
-    print(Fore.GREEN, 20*'-', 'Question Section', 20*'-')
-    print(Style.RESET_ALL)
-    HEADER, QUESTION, request = constructMessage(domainName)
+    try:
+        print(Fore.GREEN, 20*'-', 'Question Section', 20*'-')
+        HEADER, QUESTION, request = constructMessage(domainName, options['record'], options['recursion'])
 
-    startTime = time.time()
-    answer = sendRequest(request)
-    endTime = time.time()
-    print(f'\nGot results in {endTime - startTime} seconds\n')
+        startTime = time.time()
+        print(Fore.YELLOW, 20*'-', 'Whats Going On', 20*'-')
+        answer = sendRequest(request, options['record'])
+        endTime = time.time()
+        print(Fore.WHITE, f'\nGot results in {endTime - startTime} seconds\n')
 
-    print(20*'-', 'Answer Section', 20*'-')
-    print(answer)
+        print(Fore.GREEN, 20*'-', 'Answer Section', 20*'-')
+        print(answer)
+        print(Style.RESET_ALL)
+    except Exception as error:
+        print(Fore.RED, error)
+        sys.exit(2)
 else:
     print('hi')
 
