@@ -9,6 +9,10 @@ import csv
 import getopt
 from colorama import Fore, Style
 
+
+HOST = '8.8.8.8'
+PORT = 53
+
 rootFile = open('./root-servers.json')
 rootServers = json.load(rootFile)
 
@@ -124,7 +128,7 @@ def parseArgs():
         allOpt, allArgs = getopt.getopt(args, "hd:i:o:r:R:", ["help", "domain_name=", "input=", "output=", "record=", "Recur"])
         for opt, value in allOpt:
             if opt in ['-h', '--help']:
-                print('help')
+                printHelp()
                 sys.exit()
             elif opt in ['-d', '--domain_name']:
                 options['domain'] = value
@@ -190,8 +194,19 @@ def printCache(domainName, typeRec, cacheAnswer):
     for ans in cacheAnswer:
         print(f"{ans['rname']}\t{ans['rtype']}\t{ans['ttl']}\t{ans['rdata']}\n")
 
-HOST = '8.8.8.8'
-PORT = 53
+def printHelp():
+    print(Fore.WHITE+'This is a dns lookup tool written for Computer Networks course.\n')
+    print('Syntax: python3 main.py [-h|r|R] [-d|io]')
+    print('options:')
+    print('h|help\t\t\tShow this help menu and exit')
+    print('d|domain_name\t\tGive domain name you are seeking for its IP')
+    print('i|input\t\t\tThe input path of csv file with domainName and recordType')
+    print('o|output\t\tThe path of output.csv')
+    print(Fore.RED,'--note: Either -d or -io option should be specified.')
+    print(Fore.WHITE+'r|record\t\tOne of the [A, NS, CNAME, SOA, PTR, MX, TXT, AAAA] record types(default is A)')
+    print('R|Recur\t\t\tAsk to do the query recursively(default is iterative)')
+
+
 options = parseArgs()
 isSingleDomain, domainName = readInputDomains(options)
 
@@ -203,7 +218,7 @@ if isSingleDomain:
         cacheAnswer = hasAnswerInCache(options['record'], domainName)
         if cacheAnswer:
             printCache(domainName, options['record'],cacheAnswer)
-        else:            
+        else:        
             startTime = time.time()
             answer = sendRequest(request, options['record'])
             endTime = time.time()
