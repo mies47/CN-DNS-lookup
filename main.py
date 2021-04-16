@@ -1,14 +1,21 @@
 import socket
 import random
-import struct
 import binascii
 import sys
 import time
 import dnslib
 import json
+import csv
+import getopt
+from colorama import Fore
 
-f = open('./root-servers.json')
-rootServers = json.load(f)
+rootFile = open('./root-servers.json')
+rootServers = json.load(rootFile)
+
+recordTypes = json.load(open('./records.json'))
+
+testcsvf = open('./test.csv')
+csvtest = csv.reader(testcsvf, delimiter=',')
 
 def UDPSocketConnection(host:str, port:int, message:str):
     '''
@@ -28,7 +35,6 @@ def UDPSocketConnection(host:str, port:int, message:str):
 
 
 # HOST = '198.41.0.4'
-HOST = '127.0.0.1'
 PORT = 53
 
 def constructMessage(domain:str):
@@ -47,6 +53,7 @@ def constructMessage(domain:str):
     ARCOUNT = format(0, '04x')
     HEADER = ''.join([ID, FLAGS, QDCOUNT, ANCOUNT, NSCOUNT,ARCOUNT])
 
+    # domain += '.in-addr.arpa'
     QNAME = ''
     # Split domain name by . and encode each one as a label
     for label in domain.split('.'): 
@@ -55,7 +62,7 @@ def constructMessage(domain:str):
             QNAME += format(ord(char), '02x')
     QNAME += '00' # Specify the end of QNAME section
     QTYPE = format(1 , '04x') # Specify record type 1 for A records
-    print(f'Asking for type A Record!')
+    print(f'Asking for type A Record!\n')
     QCLASS = format(1 , '04x') # Specify class of request
     QUESTION = QNAME + QTYPE + QCLASS
 
@@ -67,6 +74,22 @@ def deconstructFlags(flags:str):
     RCODE = binaryFlag[12:] # 4-bit status of the response 0000 for no error
 
     return AA, RCODE
+
+def sendRequest(message):
+    for root in rootServers:
+        data, _ = UDPSocketConnection(root['ipv4'], 53, message)
+        rootAnswer = dnslib.DNSRecord.parse(data)
+        print(rootAnswer)
+        for tld in rootAnswer.ar:
+            if tld.rtype == 1:
+                tldData, _ = UDPSocketConnection(str(tld.rdata), 53, message)
+                tldAnswer = dnslib.DNSRecord.parse(tldData)
+                for ns in tldAnswer.ar:
+                    if ns.rtype == 1:
+                        auth, _ = UDPSocketConnection(str(ns.rdata), 53, message)
+                        authAnswer = dnslib.DNSRecord.parse(auth)
+                        if authAnswer.header.aa == 1:
+                            return authAnswer
 
 def parseAnswer(result):
     packet = binascii.unhexlify(result)
@@ -90,21 +113,68 @@ def parseAnswer(result):
     else:
         print(RCODE)
 
-# if len(sys.argv) < 2:
-#     print('Please provide required args!!')
-#     sys.exit()
+def parseArgs():
+    args = sys.argv[1:]
 
-# domainName = sys.argv[-1:][0]
-domainName = input()
-print(20*'-', 'Question Section', 20*'-')
-HEADER, QUESTION, request = constructMessage(domainName)
+    options = {}
 
-startTime = time.time()
-data, _ = UDPSocketConnection(HOST, 53, request)
-endTime = time.time()
-print(f'\nGot results in {endTime - startTime} seconds\n')
-result = binascii.hexlify(data)
+    try:
+        allOpt, allArgs = getopt.getopt(args, "hd:i:o:r:R:", ["help", "domain_name=", "input=", "output=", "record=", "Recur"])
+        for opt, value in allOpt:
+            if opt in ['-h', '--help']:
+                print('help')
+                sys.exit()
+            elif opt in ['-d', '--domain_name']:
+                options['domain'] = value
+            elif opt in ['-i', '--input']:
+                options['input'] = value
+            elif opt in ['-o', '--output']:
+                options['output'] = value
+            elif opt in ['-r', '--record']:
+                options['record'] = value
+            elif opt in ['-R', '--Recur']:
+                options['recursion'] = True
+        
+        optionsKeys = options.keys()
+        if 'domain' not in optionsKeys and ('input' not in optionsKeys or 'output' not in optionsKeys):
+            print(Fore.RED + 'Please provide domain name or use an input file!!!')
+            sys.exit(2)
+        if 'record' not in optionsKeys:
+            options['record'] = 'A' #Default look for A records
+        if 'recursion' not in optionsKeys:
+            options['recursion'] = False #Default do query by iteration
+    except:
+        sys.exit(2)
 
-print(20*'-', 'Answer Section', 20*'-')
-parseAnswer(result)
+    return options
+
+def readInputDomains(options):
+    if 'domain' in options:
+        domainName = options['domain']
+        return True, domainName
+    else:
+        try:
+            inputCSV = csv.reader(open(options['input']), delimiter=',')
+            return False, inputCSV
+        except Exception as error:
+            print(Fore.RED + str(error))
+            sys.exit(2)
+
+options = parseArgs()
+isSingleDomain, domainName = readInputDomains(options)
+
+if isSingleDomain:
+    print(20*'-', 'Question Section', 20*'-')
+    HEADER, QUESTION, request = constructMessage(domainName)
+
+    startTime = time.time()
+    answer = sendRequest(request)
+    endTime = time.time()
+    print(f'\nGot results in {endTime - startTime} seconds\n')
+
+    print(20*'-', 'Answer Section', 20*'-')
+    print(answer)
+else:
+    print('hi')
+
 
